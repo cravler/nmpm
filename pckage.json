@@ -1,0 +1,30 @@
+{
+  "name": "nmpm",
+  "description": "Node modules package manager",
+  "author": "Sergei Vizel <sergei.vizel@gmail.com> (https://github.com/cravler)",
+  "homepage": "https://github.com/cravler/nmpm",
+  "keywords": [
+    "manager",
+    "package",
+    "module",
+    "plugin"
+  ],
+  "license": "MIT",
+  "version": "0.1.0",
+  "main": "index.js",
+  "engines": {
+    "node": ">=0.10.0"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/cravler/nmpm.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cravler/nmpm/issues"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
