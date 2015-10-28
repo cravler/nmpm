@@ -3,6 +3,7 @@
 var fs = require('fs');
 var path = require('path');
 var exec = require('child_process').exec;
+var spawn = require('child_process').spawn;
 
 var optsToString = function(opts) {
     var arr = [];
@@ -144,12 +145,13 @@ Manager.prototype.install = function(name, callback) {
             return callback(err, null);
         }
         if (pkg) {
-            exec('npm install ' + name + ' ' + optsToString(me._opts) + ' --json', function(err, stdout, stderr) {
-                if (err) {
-                    return callback(err, null);
-                }
+            var args = ('install ' + name + ' ' + optsToString(me._opts)).split(' ');
+            var install = spawn('npm', args, { stdio: 'inherit' });
+            install.on('close', function(code) {
+                process.stdout.write('\n');
                 callback(null, pkg);
             });
+
             return;
         }
         callback(null, false);
