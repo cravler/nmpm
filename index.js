@@ -5,19 +5,7 @@ var path = require('path');
 var exec = require('child_process').exec;
 var spawn = require('child_process').spawn;
 
-var optsToString = function(opts) {
-    var arr = [];
-    for (var key in opts) {
-        if (opts[key]) {
-            var value = '--' + key;
-            if (true !== opts[key]) {
-                value += '=' + opts[key];
-            }
-            arr.push(value);
-        }
-    }
-    return arr.join(' ');
-};
+module.exports = Manager;
 
 /**
  * @param name
@@ -25,7 +13,7 @@ var optsToString = function(opts) {
  * @param filter
  * @constructor
  */
-var Manager = function(name, opts, filter) {
+function Manager(name, opts, filter) {
     var me = this;
 
     if ('function' === typeof opts) {
@@ -41,15 +29,15 @@ var Manager = function(name, opts, filter) {
 
     me._name = name;
     me._opts = opts || {
-            'prefix': process.cwd()
-        };
+        prefix: process.cwd()
+    };
     me._filter = filter || function(pkg) {
-            if (pkg.hasOwnProperty(me._name)) {
-                return true;
-            }
-            return false;
-        };
-};
+        if (pkg.hasOwnProperty(me._name)) {
+            return true;
+        }
+        return false;
+    };
+}
 
 /**
  * @param name
@@ -58,6 +46,8 @@ Manager.prototype.require = function(name) {
     var me = this;
     if (me._opts['global']) {
         name = '/usr/local/lib/node_modules/' + name;
+    } else {
+        name = me._opts['prefix'] + '/node_modules/' + name;
     }
     return require(name);
 };
@@ -68,27 +58,29 @@ Manager.prototype.require = function(name) {
  */
 Manager.prototype.info = function(name, callback) {
     var me = this;
-    if (/\//.test(name)) {
+    if (/\//.test(name) && '@' !== name[0]) {
         if (!path.isAbsolute(name)) {
             name = path.join(process.cwd(), path.normalize(name));
         }
-        try {
-            var stat = fs.statSync(name);
-            if (stat && stat.isDirectory()) {
-                var pkg = require(name + '/package.json');
-                if (me._filter(pkg)) {
-                    return callback(null, pkg);
+        fs.stat(name, function(err, stat) {
+            try {
+                if (stat && stat.isDirectory()) {
+                    var pkg = require(name + '/package.json');
+                    if (me._filter(pkg)) {
+                        return callback(null, pkg);
+                    }
                 }
-            } else {
                 callback(null, false);
+
+            } catch (e) {
+                callback(e);
             }
-        } catch (e) {
-            callback(e, null);
-        }
+        });
+
     } else {
         exec('npm show ' + name + ' --json', function(err, stdout, stderr) {
             if (err) {
-                return callback(err, null);
+                return callback(err);
             }
             var pkg = JSON.parse(stdout);
             if (me._filter(pkg)) {
@@ -111,7 +103,7 @@ Manager.prototype.package = function(name, callback) {
             return callback(null, pkg);
         }
     } catch (err) {
-        return callback(err, null);
+        return callback(err);
     }
     callback(null, false);
 };
@@ -142,13 +134,12 @@ Manager.prototype.install = function(name, callback) {
     var me = this;
     me.info(name, function(err, pkg) {
         if (err) {
-            return callback(err, null);
+            return callback(err);
         }
         if (pkg) {
             var args = ('install ' + name + ' ' + optsToString(me._opts)).split(' ');
             var install = spawn('npm', args, { stdio: 'inherit' });
             install.on('close', function(code) {
-                process.stdout.write('\n');
                 callback(null, pkg);
             });
 
@@ -166,12 +157,12 @@ Manager.prototype.remove = function(name, callback) {
     var me = this;
     me.package(name, function(err, pkg) {
         if (err) {
-            return callback(err, null);
+            return callback(err);
         }
         if (pkg) {
             exec('npm remove ' + name + ' ' + optsToString(me._opts) + ' --json', function(err, stdout, stderr) {
                 if (err) {
-                    return callback(err, null);
+                    return callback(err);
                 }
                 callback(null, stdout || stderr);
             });
@@ -181,4 +172,22 @@ Manager.prototype.remove = function(name, callback) {
     });
 };
 
-module.exports = Manager;
+// PRIVATE
+
+/**
+ * @param opts
+ * @returns {string}
+ */
+function optsToString(opts) {
+    var arr = [];
+    for (var key in opts) {
+        if (opts[key]) {
+            var value = '--' + key;
+            if (true !== opts[key]) {
+                value += '=' + opts[key];
+            }
+            arr.push(value);
+        }
+    }
+    return arr.join(' ');
+}
