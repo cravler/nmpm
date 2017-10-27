@@ -45,9 +45,9 @@ function Manager(name, opts, filter) {
 Manager.prototype.require = function(name) {
     var me = this;
     if (me._opts['global']) {
-        name = '/usr/local/lib/node_modules/' + name;
+        name = path.join(getNodeModulesGlobalDir(me), name);
     } else {
-        name = me._opts['prefix'] + '/node_modules/' + name;
+        name = path.join(me._opts['prefix'], 'node_modules', name);
     }
     return require(name);
 };
@@ -65,7 +65,7 @@ Manager.prototype.info = function(name, callback) {
         fs.stat(name, function(err, stat) {
             try {
                 if (stat && stat.isDirectory()) {
-                    var pkg = require(name + '/package.json');
+                    var pkg = require(path.join(name, 'package.json'));
                     if (me._filter(pkg)) {
                         return callback(null, pkg);
                     }
@@ -98,7 +98,7 @@ Manager.prototype.info = function(name, callback) {
 Manager.prototype.package = function(name, callback) {
     var me = this;
     try {
-        var pkg = me.require(name + '/package.json');
+        var pkg = me.require(path.join(name, 'package.json'));
         if (me._filter(pkg)) {
             return callback(null, pkg);
         }
@@ -117,7 +117,7 @@ Manager.prototype.list = function(callback) {
         var data = [];
         var dependencies = JSON.parse(stdout)['dependencies'] || {};
         for (var name in dependencies) {
-            var pkg = me.require(name + '/package.json');
+            var pkg = me.require(path.join(name, 'package.json'));
             if (me._filter(pkg)) {
                 data.push(name);
             }
@@ -142,7 +142,6 @@ Manager.prototype.install = function(name, callback) {
             install.on('close', function(code) {
                 callback(null, pkg);
             });
-
             return;
         }
         callback(null, false);
@@ -190,4 +189,16 @@ function optsToString(opts) {
         }
     }
     return arr.join(' ');
+}
+
+/**
+ * @param manager
+ * @returns {*}
+ */
+function getNodeModulesGlobalDir(manager) {
+    if (!manager._globalDir) {
+        manager._globalDir = require('child_process').execSync('npm root -g');
+    }
+
+    return manager._globalDir;
 }
