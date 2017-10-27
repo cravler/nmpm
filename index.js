@@ -180,13 +180,7 @@ Manager.prototype.remove = function(name, callback) {
 function optsToString(opts) {
     var arr = [];
     for (var key in opts) {
-        if (opts[key]) {
-            var value = '--' + key;
-            if (true !== opts[key]) {
-                value += '=' + opts[key];
-            }
-            arr.push(value);
-        }
+        arr.push('--' + key + '=' + opts[key]);
     }
     return arr.join(' ');
 }
