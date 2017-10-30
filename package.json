@@ -10,12 +10,14 @@
     "plugin"
   ],
   "license": "MIT",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "main": "index.js",
   "engines": {
-    "node": ">=0.10.0"
+    "node": ">=4"
   },
-  "dependencies": {},
+  "dependencies": {
+    "npm": "^4.6.1"
+  },
   "devDependencies": {},
   "repository": {
     "type": "git",
