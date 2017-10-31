@@ -80,7 +80,7 @@ Manager.prototype.info = function(name, callback) {
         });
 
     } else {
-        exec(me._npm + ' show ' + name + ' --json', function(err, stdout, stderr) {
+        exec(me._npm + ' show ' + name + ' --json --no-update-notifier', function(err, stdout, stderr) {
             if (err) {
                 return callback(err);
             }
@@ -115,7 +115,7 @@ Manager.prototype.package = function(name, callback) {
  */
 Manager.prototype.list = function(callback) {
     var me = this;
-    exec(me._npm + ' ls ' + optsToString(me._opts) + ' --depth=0 --json', function(err, stdout, stderr) {
+    exec(me._npm + ' ls ' + optsToString(me._opts) + ' --depth=0 --json --no-update-notifier', function(err, stdout, stderr) {
         var data = [];
         var dependencies = JSON.parse(stdout)['dependencies'] || {};
         for (var name in dependencies) {
@@ -139,7 +139,7 @@ Manager.prototype.install = function(name, callback) {
             return callback(err);
         }
         if (pkg) {
-            var args = ('install ' + name + ' ' + optsToString(me._opts)).split(' ');
+            var args = ('install ' + name + ' ' + optsToString(me._opts) + ' --no-update-notifier').split(' ');
             var install = spawn(me._npm, args, { stdio: 'inherit' });
             install.on('close', function(code) {
                 callback(null, pkg);
@@ -161,7 +161,7 @@ Manager.prototype.remove = function(name, callback) {
             return callback(err);
         }
         if (pkg) {
-            exec(me._npm + ' remove ' + name + ' ' + optsToString(me._opts) + ' --json', function(err, stdout, stderr) {
+            exec(me._npm + ' remove ' + name + ' ' + optsToString(me._opts) + ' --json --no-update-notifier', function(err, stdout, stderr) {
                 if (err) {
                     return callback(err);
                 }
@@ -182,7 +182,11 @@ Manager.prototype.remove = function(name, callback) {
 function optsToString(opts) {
     var arr = [];
     for (var key in opts) {
-        arr.push('--' + key + '=' + opts[key]);
+        if (undefined != opts[key]) {
+            arr.push('--' + key + '=' + opts[key]);
+        } else {
+            arr.push('--' + key);
+        }
     }
     return arr.join(' ');
 }
@@ -193,7 +197,7 @@ function optsToString(opts) {
  */
 function getNodeModulesGlobalDir(manager) {
     if (!manager._globalDir) {
-        manager._globalDir = require('child_process').execSync(manager._npm + ' root -g');
+        manager._globalDir = require('child_process').execSync(manager._npm + ' root -g --no-update-notifier');
     }
 
     return manager._globalDir;
