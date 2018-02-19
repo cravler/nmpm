@@ -1,187 +1,34 @@
 'use strict';
 
-var fs = require('fs');
-var path = require('path');
-var exec = require('child_process').exec;
-var spawn = require('child_process').spawn;
+const fs = require('fs');
+const path = require('path');
+const util = require('util');
+const exec = require('child_process').exec;
+const spawn = require('child_process').spawn;
 
-module.exports = Manager;
+const NPM = require.resolve('npm/bin/npm-cli');
 
-/**
- * @param name
- * @param opts
- * @param filter
- * @constructor
- */
-function Manager(name, opts, filter) {
-    var me = this;
-    
-    me._npm = require.resolve('npm/bin/npm-cli');
+const fsStat = util.promisify(fs.stat);
 
-    if ('function' === typeof opts) {
-        filter = opts;
-        opts = null;
-    }
-
-    if ('string' === typeof opts) {
-        opts = {
-            prefix: opts
-        };
-    }
-
-    me._name = name;
-    me._opts = opts || {
-        prefix: process.cwd()
-    };
-    me._filter = filter || function(pkg) {
-        if (pkg.hasOwnProperty(me._name)) {
-            return true;
-        }
-        return false;
-    };
-}
-
-/**
- * @param name
- */
-Manager.prototype.require = function(name) {
-    var me = this;
-    if (me._opts['global']) {
-        name = path.join(getNodeModulesGlobalDir(me), name);
-    } else {
-        name = path.join(me._opts['prefix'], 'node_modules', name);
-    }
-    return require(name);
-};
-
-/**
- * @param name
- * @param callback
- */
-Manager.prototype.info = function(name, callback) {
-    var me = this;
-    if (/\//.test(name) && '@' !== name[0]) {
-        if (!path.isAbsolute(name)) {
-            name = path.join(process.cwd(), path.normalize(name));
-        }
-        fs.stat(name, function(err, stat) {
-            try {
-                if (stat && stat.isDirectory()) {
-                    var pkg = require(path.join(name, 'package.json'));
-                    if (me._filter(pkg)) {
-                        return callback(null, pkg);
-                    }
-                }
-                callback(null, false);
-
-            } catch (e) {
-                callback(e);
-            }
-        });
-
-    } else {
-        exec(me._npm + ' show ' + name + ' --json --no-update-notifier', function(err, stdout, stderr) {
-            if (err) {
-                return callback(err);
-            }
-            var pkg = JSON.parse(stdout);
-            if (me._filter(pkg)) {
-                return callback(null, pkg);
-            }
-            callback(null, false);
-        });
-    }
-};
-
-/**
- * @param name
- * @param callback
- */
-Manager.prototype.package = function(name, callback) {
-    var me = this;
-    try {
-        var pkg = me.require(path.join(name, 'package.json'));
-        if (me._filter(pkg)) {
-            return callback(null, pkg);
-        }
-    } catch (err) {
-        return callback(err);
-    }
-    callback(null, false);
-};
-
-/**
- * @param callback
- */
-Manager.prototype.list = function(callback) {
-    var me = this;
-    exec(me._npm + ' ls ' + optsToString(me._opts) + ' --depth=0 --json --no-update-notifier', function(err, stdout, stderr) {
-        var data = [];
-        var dependencies = JSON.parse(stdout)['dependencies'] || {};
-        for (var name in dependencies) {
-            var pkg = me.require(path.join(name, 'package.json'));
-            if (me._filter(pkg)) {
-                data.push(name);
-            }
-        }
-        callback(null, data);
+const npmSpawn = util.promisify((args, callback) => {
+    const install = spawn(NPM, args, { stdio: 'inherit' });
+    install.on('close', function(code) {
+        callback(null, code);
     });
-};
+});
 
-/**
- * @param name
- * @param callback
- */
-Manager.prototype.install = function(name, callback) {
-    var me = this;
-    me.info(name, function(err, pkg) {
+const npmExec = util.promisify((cmd, callback) => {
+    exec(NPM + ' ' + cmd, (err, stdout, stderr) => {
         if (err) {
             return callback(err);
         }
-        if (pkg) {
-            var args = ('install ' + name + ' ' + optsToString(me._opts) + ' --no-update-notifier').split(' ');
-            var install = spawn(me._npm, args, { stdio: 'inherit' });
-            install.on('close', function(code) {
-                callback(null, pkg);
-            });
-            return;
-        }
-        callback(null, false);
+        callback(null, { stdout, stderr });
     });
-};
+});
 
-/**
- * @param name
- * @param callback
- */
-Manager.prototype.remove = function(name, callback) {
-    var me = this;
-    me.package(name, function(err, pkg) {
-        if (err) {
-            return callback(err);
-        }
-        if (pkg) {
-            exec(me._npm + ' remove ' + name + ' ' + optsToString(me._opts) + ' --json --no-update-notifier', function(err, stdout, stderr) {
-                if (err) {
-                    return callback(err);
-                }
-                callback(null, stdout || stderr);
-            });
-            return;
-        }
-        callback(null, false);
-    });
-};
-
-// PRIVATE
-
-/**
- * @param opts
- * @returns {string}
- */
-function optsToString(opts) {
-    var arr = [];
-    for (var key in opts) {
+const optsToString = (opts) => {
+    const arr = [];
+    for (let key in opts) {
         if (undefined != opts[key]) {
             arr.push('--' + key + '=' + opts[key]);
         } else {
@@ -189,16 +36,153 @@ function optsToString(opts) {
         }
     }
     return arr.join(' ');
-}
+};
 
-/**
- * @param manager
- * @returns {*}
- */
-function getNodeModulesGlobalDir(manager) {
-    if (!manager._globalDir) {
-        manager._globalDir = require('child_process').execSync(manager._npm + ' root -g --no-update-notifier');
+class Manager {
+    /**
+     * @api public
+     * @param id
+     */
+    static async import(id) {
+        if (module.import) {
+            return await module.import(id);
+        }
+        return module.require(id);
     }
 
-    return manager._globalDir;
+    /**
+     * @api public
+     * @param name
+     * @param config
+     */
+    constructor(name, { opts, filter } = {}) {
+        if (!opts) {
+            opts = {
+                prefix: process.cwd()
+            };
+        }
+
+        if (!filter) {
+            filter = (pkg) => {
+                if (pkg.hasOwnProperty(this._name)) {
+                    return true;
+                }
+                return false;
+            };
+        }
+
+        this._name = name;
+        this._opts = opts;
+        this._filter = filter;
+    }
+
+    /**
+     * @api public
+     * @param name
+     */
+    async import(name) {
+        if (this._opts['global']) {
+            const cmd = 'root -g --no-update-notifier';
+            const { stdout } = await npmExec(cmd);
+            name = path.join(stdout, name);
+        } else {
+            name = path.join(this._opts['prefix'], 'node_modules', name);
+        }
+
+        return await Manager.import(name);
+    }
+
+    /**
+     * @api public
+     * @param name
+     */
+    async info(name) {
+        if (/\//.test(name) && '@' !== name[0]) {
+            if (!path.isAbsolute(name)) {
+                name = path.join(process.cwd(), path.normalize(name));
+            }
+            let isDirectory =false;
+            try {
+                const stat = await fsStat(name);
+                isDirectory = stat.isDirectory();
+            } catch (e) {}
+
+            if (isDirectory) {
+                const pkg = await Manager.import(path.join(name, 'package.json'));
+                if (await this._filter(pkg)) {
+                    return pkg;
+                }
+            }
+            return false;
+
+        } else {
+            const cmd = 'show ' + name + ' --json --no-update-notifier';
+            const { stdout } = await npmExec(cmd);
+            const pkg = JSON.parse(stdout);
+            if (await this._filter(pkg)) {
+                return pkg;
+            }
+            return false;
+        }
+    }
+
+    /**
+     * @api public
+     * @param name
+     */
+    async package(name) {
+        const pkg = await this.import(path.join(name, 'package.json'));
+        if (await this._filter(pkg)) {
+            return pkg;
+        }
+        return false;
+    }
+
+    /**
+     * @api public
+     */
+    async list() {
+        const cmd = 'ls ' + optsToString(this._opts) + ' --depth=0 --json --no-update-notifier';
+        const { stdout } = await npmExec(cmd);
+
+        const data = [];
+        const dependencies = JSON.parse(stdout)['dependencies'] || {};
+        for (let name in dependencies) {
+            const pkg = await this.import(path.join(name, 'package.json'));
+            if (await this._filter(pkg)) {
+                data.push(name);
+            }
+        }
+        return data;
+    }
+
+    /**
+     * @api public
+     * @param name
+     */
+    async install(name) {
+        const pkg = await this.info(name);
+        if (pkg) {
+            const cmd = 'install ' + name + ' ' + optsToString(this._opts) + ' --no-update-notifier';
+            const code = await npmSpawn(cmd.split(' '));
+            return pkg;
+        }
+        return false;
+    }
+
+    /**
+     * @api public
+     * @param name
+     */
+    async remove(name) {
+        const pkg = this.package(name);
+        if (pkg) {
+            const cmd = 'remove ' + name + ' ' + optsToString(this._opts) + ' --json --no-update-notifier';
+            const { stdout, stderr } = await npmExec(cmd);
+            return stdout || stderr;
+        }
+        return false;
+    }
 }
+
+module.exports = Manager;

@@ -13,21 +13,19 @@ nmpm depends on [Node.js](http://nodejs.org/) and [npm](http://npmjs.org/).
 ## Usage
 
 ```js
+const Manager = require('nmpm');
 
-var Manager = require('nmpm');
+const manager = new Manager('manager-name');
 
-var manager = new Manager('manager-name');
+manager.list().then(result => {}, error => {});
 
-manager.list(function(names) {});
+manager.import('package-name').then(result => {}, error => {});
 
-manager.info('package-name', function(err, pkg) {});
+manager.package('package-name').then(result => {}, error => {});
 
-manager.package('package-name', function(err, pkg) {});
+manager.install('package-name').then(result => {}, error => {});
 
-manager.install('package-name', function(err, pkg) {});
-
-manager.remove('package-name', function(err, pkg) {});
-
+manager.remove('package-name').then(result => {}, error => {});
 
 ```
 

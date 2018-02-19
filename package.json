@@ -10,10 +10,10 @@
     "plugin"
   ],
   "license": "MIT",
-  "version": "0.1.7",
+  "version": "1.0.0",
   "main": "index.js",
   "engines": {
-    "node": ">=4"
+    "node": ">=8.9"
   },
   "dependencies": {
     "npm": "^4.6.1"
