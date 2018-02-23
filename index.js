@@ -175,7 +175,7 @@ class Manager {
      * @param name
      */
     async remove(name) {
-        const pkg = this.package(name);
+        const pkg = await this.package(name);
         if (pkg) {
             const cmd = 'remove ' + name + ' ' + optsToString(this._opts) + ' --json --no-update-notifier';
             const { stdout, stderr } = await npmExec(cmd);
