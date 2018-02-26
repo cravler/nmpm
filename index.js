@@ -47,7 +47,7 @@ class Manager {
         if (module.import) {
             return await module.import(id);
         }
-        return module.require(id);
+        return { default: module.require(id) };
     }
 
     /**
@@ -108,7 +108,7 @@ class Manager {
             } catch (e) {}
 
             if (isDirectory) {
-                const pkg = await Manager.import(path.join(name, 'package.json'));
+                const { default: pkg } = await Manager.import(path.join(name, 'package.json'));
                 if (await this._filter(pkg)) {
                     return pkg;
                 }
@@ -131,7 +131,7 @@ class Manager {
      * @param name
      */
     async package(name) {
-        const pkg = await this.import(path.join(name, 'package.json'));
+        const { default: pkg } = await this.import(path.join(name, 'package.json'));
         if (await this._filter(pkg)) {
             return pkg;
         }
@@ -148,7 +148,7 @@ class Manager {
         const data = [];
         const dependencies = JSON.parse(stdout)['dependencies'] || {};
         for (let name in dependencies) {
-            const pkg = await this.import(path.join(name, 'package.json'));
+            const { default: pkg } = await this.import(path.join(name, 'package.json'));
             if (await this._filter(pkg)) {
                 data.push(name);
             }
