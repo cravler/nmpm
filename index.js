@@ -6,7 +6,7 @@ const util = require('util');
 const exec = require('child_process').exec;
 const spawn = require('child_process').spawn;
 
-const NPM = require.resolve('npm/bin/npm-cli');
+const NPM = process.env.NMPM_NPM_CLI || require.resolve('npm/bin/npm-cli');
 
 const fsStat = util.promisify(fs.stat);
 
@@ -163,8 +163,28 @@ class Manager {
     async install(name) {
         const pkg = await this.info(name);
         if (pkg) {
-            const cmd = 'install ' + name + ' ' + optsToString(this._opts) + ' --no-update-notifier';
-            const code = await npmSpawn(cmd.split(' '));
+            // prevent symlinks
+            let cleaning = async () => {};
+            const resolvedPath = path.resolve(process.cwd(), name);
+            const stat = await fsStat(resolvedPath);
+            if (stat.isDirectory()) {
+                const cmd = 'pack ' + resolvedPath + ' --no-update-notifier';
+                const { stdout, stderr } = await npmExec(cmd);
+                name = path.resolve(process.cwd(), stdout.split('\n')[0]);
+                cleaning = async () => {
+                    await util.fsUnlink(name);
+                };
+            }
+
+            try {
+                const cmd = 'install ' + name + ' ' + optsToString(this._opts) + ' --no-update-notifier';
+                const code = await npmSpawn(cmd.split(' '));
+                await cleaning();
+            } catch (e) {
+                await cleaning();
+                throw e;
+            }
+
             return pkg;
         }
         return false;
