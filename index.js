@@ -9,6 +9,7 @@ const spawn = require('child_process').spawn;
 const NPM = process.env.NMPM_NPM_CLI || require.resolve('npm/bin/npm-cli');
 
 const fsStat = util.promisify(fs.stat);
+const fsUnlink = util.promisify(fs.unlink);
 
 const npmSpawn = util.promisify((args, callback) => {
     const install = spawn(NPM, args, { stdio: 'inherit' });
@@ -36,6 +37,24 @@ const optsToString = (opts) => {
         }
     }
     return arr.join(' ');
+};
+
+const resolveName = async (value) =>  {
+    try {
+        const resolvedPath = path.resolve(value);
+        const stat = await fsStat(resolvedPath);
+        if (stat.isDirectory()) {
+            return {
+                type: 'folder',
+                value: resolvedPath
+            };
+        }
+    } catch (e) {}
+
+    return {
+        type: 'name',
+        value: value
+    };
 };
 
 class Manager {
@@ -97,33 +116,24 @@ class Manager {
      * @param name
      */
     async info(name) {
-        if (/\//.test(name) && '@' !== name[0]) {
-            if (!path.isAbsolute(name)) {
-                name = path.join(process.cwd(), path.normalize(name));
-            }
-            let isDirectory =false;
-            try {
-                const stat = await fsStat(name);
-                isDirectory = stat.isDirectory();
-            } catch (e) {}
+        const resolved = await resolveName(name);
 
-            if (isDirectory) {
-                const { default: pkg } = await Manager.import(path.join(name, 'package.json'));
-                if (await this._filter(pkg)) {
-                    return pkg;
-                }
+        if ('folder' == resolved['type']) {
+            const { default: pkg } = await Manager.import(path.join(resolved['value'], 'package.json'));
+            if (await this._filter(pkg)) {
+                return pkg;
             }
-            return false;
 
-        } else {
-            const cmd = 'show ' + name + ' --json --no-update-notifier';
+        } else if ('name' == resolved['type']) {
+            const cmd = 'show ' + resolved['value'] + ' --json --no-update-notifier';
             const { stdout } = await npmExec(cmd);
             const pkg = JSON.parse(stdout);
             if (await this._filter(pkg)) {
                 return pkg;
             }
-            return false;
         }
+
+        return false;
     }
 
     /**
@@ -163,21 +173,21 @@ class Manager {
     async install(name) {
         const pkg = await this.info(name);
         if (pkg) {
+            const resolved = await resolveName(name);
+
             // prevent symlinks
             let cleaning = async () => {};
-            const resolvedPath = path.resolve(process.cwd(), name);
-            const stat = await fsStat(resolvedPath);
-            if (stat.isDirectory()) {
-                const cmd = 'pack ' + resolvedPath + ' --no-update-notifier';
-                const { stdout, stderr } = await npmExec(cmd);
-                name = path.resolve(process.cwd(), stdout.split('\n')[0]);
+            if ('folder' == resolved['type']) {
+                const cmd = 'pack ' + resolved['value'] + ' --no-update-notifier';
+                const { stdout } = await npmExec(cmd);
+                resolved['value'] = path.resolve(stdout.split('\n')[0]);
                 cleaning = async () => {
-                    await util.fsUnlink(name);
+                    await fsUnlink(resolved['value']);
                 };
             }
 
             try {
-                const cmd = 'install ' + name + ' ' + optsToString(this._opts) + ' --no-update-notifier';
+                const cmd = 'install ' + resolved['value'] + ' ' + optsToString(this._opts) + ' --no-update-notifier';
                 const code = await npmSpawn(cmd.split(' '));
                 await cleaning();
             } catch (e) {
