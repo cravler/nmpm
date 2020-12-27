@@ -1,5 +1,6 @@
 {
   "name": "nmpm",
+  "type": "commonjs",
   "description": "Node modules package manager",
   "author": "Sergei Vizel <sergei.vizel@gmail.com> (https://github.com/cravler)",
   "homepage": "https://github.com/cravler/nmpm",
@@ -10,16 +11,19 @@
     "plugin"
   ],
   "license": "MIT",
-  "version": "1.1.1",
+  "version": "2.0.0",
   "main": "index.js",
   "files": [
-    "index.js"
+    "index.js",
+    "util.js"
   ],
   "engines": {
-    "node": ">=10.16"
+    "node": ">=12.19.0"
   },
   "dependencies": {
-    "npm": "^6.14.8"
+    "file-type": "^16.0.1",
+    "read-chunk": "^3.2.0",
+    "tar-stream": "^2.1.4"
   },
   "devDependencies": {},
   "repository": {

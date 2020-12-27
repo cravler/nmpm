@@ -1,66 +1,9 @@
-'use strict';
-
-const fs = require('fs');
 const path = require('path');
-const util = require('util');
-const exec = require('child_process').exec;
-const spawn = require('child_process').spawn;
-
-const NPM = process.env.NMPM_NPM_CLI || require.resolve('npm/bin/npm-cli');
-
-const fsStat = util.promisify(fs.stat);
-const fsUnlink = util.promisify(fs.unlink);
-
-const npmSpawn = util.promisify((args, callback) => {
-    const install = spawn(NPM, args, { stdio: 'inherit' });
-    install.on('close', function(code) {
-        callback(null, code);
-    });
-});
-
-const npmExec = util.promisify((cmd, callback) => {
-    exec(NPM + ' ' + cmd, (err, stdout, stderr) => {
-        if (err) {
-            return callback(err);
-        }
-        callback(null, { stdout, stderr });
-    });
-});
-
-const optsToString = (opts) => {
-    const arr = [];
-    for (let key in opts) {
-        if (undefined != opts[key]) {
-            arr.push('--' + key + '=' + opts[key]);
-        } else {
-            arr.push('--' + key);
-        }
-    }
-    return arr.join(' ');
-};
-
-const resolveName = async (value) =>  {
-    try {
-        const resolvedPath = path.resolve(value);
-        const stat = await fsStat(resolvedPath);
-        if (stat.isDirectory()) {
-            return {
-                type: 'folder',
-                value: resolvedPath
-            };
-        }
-    } catch (e) {}
-
-    return {
-        type: 'name',
-        value: value
-    };
-};
+const util = require('./util');
 
 class Manager {
     /**
-     * @api public
-     * @param id
+     * @param {string} id
      */
     static async import(id) {
         if (module.import) {
@@ -70,11 +13,10 @@ class Manager {
     }
 
     /**
-     * @api public
-     * @param name
-     * @param config
+     * @param {string} name
+     * @param {Object} config
      */
-    constructor(name, { opts, filter } = {}) {
+    constructor(name, { opts, filter, throwPackageNotFound } = {}) {
         if (!opts) {
             opts = {
                 prefix: process.cwd()
@@ -82,136 +24,191 @@ class Manager {
         }
 
         if (!filter) {
-            filter = (pkg) => {
-                if (pkg.hasOwnProperty(this._name)) {
-                    return true;
+            filter = async (pkg) => {
+                if (!pkg.hasOwnProperty(this._name)) {
+                    throw new Error('Package `' + pkg['name'] + '@' + pkg['version'] + '` is not supported');
                 }
-                return false;
+            };
+        }
+
+        if (!throwPackageNotFound) {
+            throwPackageNotFound = (name) => {
+                throw new Error('Unable to locate package `' + name + '`');
             };
         }
 
         this._name = name;
         this._opts = opts;
         this._filter = filter;
+        this._throwPackageNotFound = throwPackageNotFound;
+
+        this._minSupportedNpmVersion = '6.14.5';
+        this._npmVersionCheck = async () => {
+            if (!this._npmVersion) {
+                const { stdout, stderr } = await util.npmExec('-v');
+                this._npmVersion = stdout.trim();
+            }
+
+            if (this._npmVersion < this._minSupportedNpmVersion) {
+                throw new Error(
+                    'unsupported NPM version, require `npm@>=' + this._minSupportedNpmVersion + '`'
+                );
+            }
+        };
     }
 
     /**
-     * @api public
-     * @param name
+     * Import package
+     *
+     * @param {string} name
+     * @returns {*}
      */
     async import(name) {
-        if (this._opts['global']) {
-            const cmd = 'root -g --no-update-notifier';
-            const { stdout } = await npmExec(cmd);
-            name = path.join(stdout, name);
-        } else {
-            name = path.join(this._opts['prefix'], 'node_modules', name);
-        }
+        name = await util.resolvePath(name, this._opts);
 
         return await Manager.import(name);
     }
 
     /**
-     * @api public
-     * @param name
+     * Package info
+     *
+     * @param {string} name
+     * @returns {Object}
      */
     async info(name) {
-        const resolved = await resolveName(name);
+        const resolved = await util.resolveName(name);
 
         if ('folder' == resolved['type']) {
             const { default: pkg } = await Manager.import(path.join(resolved['value'], 'package.json'));
-            if (await this._filter(pkg)) {
+            if (false !== await this._filter(pkg)) {
                 return pkg;
             }
-
+        } else if (['tarball_file', 'tarball_url'].includes(resolved['type'])) {
+            const pkg = await util.readTarballPkg(resolved);
+            if (false !== await this._filter(pkg)) {
+                return pkg;
+            }
         } else if ('name' == resolved['type']) {
-            const cmd = 'show ' + resolved['value'] + ' --json --no-update-notifier';
-            const { stdout } = await npmExec(cmd);
-            const pkg = JSON.parse(stdout);
-            if (await this._filter(pkg)) {
-                return pkg;
-            }
+            try {
+                const cmd = 'show ' + resolved['value'] + ' --json --no-update-notifier';
+                const { stdout, stderr } = await util.npmExec(cmd);
+                const pkg = JSON.parse(stdout);
+                if (false !== await this._filter(pkg)) {
+                    return pkg;
+                }
+            } catch (e) {}
         }
 
-        return false;
+        this._throwPackageNotFound(name);
     }
 
     /**
-     * @api public
-     * @param name
+     * Installed package info
+     *
+     * @param {string} name
+     * @returns {Object}
      */
     async package(name) {
         const { default: pkg } = await this.import(path.join(name, 'package.json'));
-        if (await this._filter(pkg)) {
+
+        if (false !== await this._filter(pkg)) {
             return pkg;
         }
-        return false;
+
+        this._throwPackageNotFound(name);
     }
 
     /**
-     * @api public
+     * Installed packages
+     *
+     * @returns {string[]}
      */
     async list() {
-        const cmd = 'ls ' + optsToString(this._opts) + ' --depth=0 --json --no-update-notifier';
-        const { stdout } = await npmExec(cmd);
+        const cmd = 'ls ' + util.optsToString(this._opts) + ' --depth=0 --json --no-update-notifier';
+        const { stdout, stderr } = await util.npmExec(cmd);
 
         const data = [];
         const dependencies = JSON.parse(stdout)['dependencies'] || {};
         for (let name in dependencies) {
             const { default: pkg } = await this.import(path.join(name, 'package.json'));
-            if (await this._filter(pkg)) {
-                data.push(name);
-            }
+            try {
+                if (false !== await this._filter(pkg)) {
+                    data.push(name);
+                }
+            } catch (e) {}
         }
         return data;
     }
 
     /**
-     * @api public
-     * @param name
+     * Install package
+     *
+     * @param {string} name
+     * @param {Promise} [satisfies]
+     * @returns {Object}
      */
-    async install(name) {
-        const pkg = await this.info(name);
-        if (pkg) {
-            const resolved = await resolveName(name);
+    async install(name, satisfies = async (pkg) => {}) {
+        await this._npmVersionCheck();
+
+        let pkg = null;
+
+        try {
+            pkg = await this.info(name);
+        } catch (e) {}
+
+        if (pkg && false !== await satisfies(pkg)) {
+            const resolved = await util.resolveName(name);
 
             // prevent symlinks
             let cleaning = async () => {};
             if ('folder' == resolved['type']) {
                 const cmd = 'pack ' + resolved['value'] + ' --no-update-notifier';
-                const { stdout } = await npmExec(cmd);
+                const { stdout, stderr } = await util.npmExec(cmd);
                 resolved['value'] = path.resolve(stdout.split('\n')[0]);
                 cleaning = async () => {
-                    await fsUnlink(resolved['value']);
+                    await util.fsUnlink(resolved['value']);
                 };
             }
 
+            let exitCode;
+
             try {
-                const cmd = 'install ' + resolved['value'] + ' ' + optsToString(this._opts) + ' --no-update-notifier';
-                const code = await npmSpawn(cmd.split(' '));
+                const cmd = 'install ' + resolved['value'] + ' ' + util.optsToString(this._opts) + ' --no-update-notifier';
+                exitCode = await util.npmSpawn(cmd.split(' '));
                 await cleaning();
             } catch (e) {
                 await cleaning();
                 throw e;
             }
 
-            return pkg;
+            return { name, exitCode, pkg };
         }
-        return false;
+
+        this._throwPackageNotFound(name);
     }
 
     /**
-     * @api public
-     * @param name
+     * Remove package
+     *
+     * @param {string} name
+     * @returns {Object}
      */
     async remove(name) {
-        const pkg = await this.package(name);
+        await this._npmVersionCheck();
+
+        let pkg = null;
+
+        try {
+            pkg = await this.package(name);
+        } catch (e) {}
+
         if (pkg) {
-            const cmd = 'remove ' + name + ' ' + optsToString(this._opts) + ' --json --no-update-notifier';
-            const { stdout, stderr } = await npmExec(cmd);
-            return stdout || stderr;
+            const cmd = 'remove ' + name + ' ' + util.optsToString(this._opts) + ' --no-update-notifier';
+            const exitCode = await util.npmSpawn(cmd.split(' '));
+            return { name, exitCode };
         }
-        return false;
+
+        this._throwPackageNotFound(name);
     }
 }
 
