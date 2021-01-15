@@ -49,10 +49,12 @@ class Manager {
                 this._npmVersion = stdout.trim();
             }
 
-            if (this._npmVersion < this._minSupportedNpmVersion) {
-                throw new Error(
-                    'unsupported NPM version, require `npm@>=' + this._minSupportedNpmVersion + '`'
-                );
+            if (this._npmVersion !== this._minSupportedNpmVersion) {
+                if (!util.isNewerVersion(this._minSupportedNpmVersion, this._npmVersion)) {
+                    throw new Error(
+                        'unsupported NPM version, require `npm@>=' + this._minSupportedNpmVersion + '`'
+                    );
+                }
             }
         };
     }
