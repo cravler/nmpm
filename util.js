@@ -113,27 +113,29 @@ const isTarballUrl = async (value) => {
     return isTarball(await readUrlChunk(value));
 };
 
-const resolveName = async (value) =>  {
-    try {
-        const resolvedPath = path.resolve(value);
-        const stat = await fsStat(resolvedPath);
-        if (stat.isDirectory()) {
-            return {
-                type: 'folder',
-                value: resolvedPath
-            };
-        } else if (stat.isFile() && await isTarballFile(resolvedPath)) {
-            return {
-                type: 'tarball_file',
-                value: resolvedPath
-            };
-        }
-    } catch (e) {
+const resolveName = async (value) => {
+    if (isUrl(value, ['http', 'https'])) {
         try {
             if (await isTarballUrl(value)) {
                 return {
                     type: 'tarball_url',
                     value: value
+                };
+            }
+        } catch (e) {}
+    } else {
+        try {
+            const resolvedPath = path.resolve(value);
+            const stat = await fsStat(resolvedPath);
+            if (stat.isDirectory()) {
+                return {
+                    type: 'folder',
+                    value: resolvedPath
+                };
+            } else if (stat.isFile() && await isTarballFile(resolvedPath)) {
+                return {
+                    type: 'tarball_file',
+                    value: resolvedPath
                 };
             }
         } catch (e) {}
@@ -170,6 +172,23 @@ const isNewerVersion = (oldVer, newVer) => {
     return false;
 };
 
+const isUrl = (value, protocols) => {
+    try {
+        const url = new url.URL(value);
+        if (protocols) {
+            if (url.protocol) {
+                return protocols
+                    .map(x => x + ':')
+                    .includes(url.protocol)
+                ;
+            }
+        } else {
+            return true;
+        }
+    } catch (err) {}
+    return false;
+};
+
 module.exports = {
     fsStat,
     fsUnlink,
@@ -184,4 +203,5 @@ module.exports = {
     resolveName,
     resolvePath,
     isNewerVersion,
+    isUrl,
 };
