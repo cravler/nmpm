@@ -11,7 +11,7 @@
     "plugin"
   ],
   "license": "MIT",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "main": "index.js",
   "files": [
     "index.js",
@@ -21,9 +21,9 @@
     "node": ">=12.19.0"
   },
   "dependencies": {
-    "file-type": "^16.0.1",
+    "file-type": "^16.5.4",
     "read-chunk": "^3.2.0",
-    "tar-stream": "^2.1.4"
+    "tar-stream": "^3.1.6"
   },
   "devDependencies": {},
   "repository": {

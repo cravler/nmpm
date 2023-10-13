@@ -6,9 +6,11 @@ class Manager {
      * @param {string} id
      */
     static async import(id) {
-        if (module.import) {
-            return await module.import(id);
-        }
+        try {
+            if (module.import) {
+                return await module.import(id);
+            }
+        } catch (e) {}
         return { default: module.require(id) };
     }
 
